@@ -101,17 +101,71 @@ const Lightning: React.FC<LightningProps> = ({
           return value;
       }
 
+      float lightningBranch(vec2 uv, float offset, float scale, float angleOffset) {
+          vec2 branchUv = uv;
+          branchUv.x += offset;
+          branchUv = branchUv * scale;
+          
+          // Add some angular deviation for branches
+          float angle = angleOffset + sin(iTime * uSpeed * 2.0 + offset * 10.0) * 0.3;
+          mat2 rot = rotate2d(angle);
+          branchUv = rot * branchUv;
+          
+          branchUv += 2.0 * fbm(branchUv * uSize * 0.8 + 0.6 * iTime * uSpeed + offset * 5.0) - 1.0;
+          
+          float dist = abs(branchUv.x);
+          return 1.0 / (1.0 + dist * 20.0);
+      }
+
       void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
           vec2 uv = fragCoord / iResolution.xy;
           uv = 2.0 * uv - 1.0;
           uv.x *= iResolution.x / iResolution.y;
           uv.x += uXOffset;
           
-          uv += 2.0 * fbm(uv * uSize + 0.8 * iTime * uSpeed) - 1.0;
+          // Main lightning bolt
+          vec2 mainUv = uv;
+          mainUv += 2.0 * fbm(mainUv * uSize + 0.8 * iTime * uSpeed) - 1.0;
+          float mainDist = abs(mainUv.x);
+          float mainLightning = pow(mix(0.0, 0.07, hash11(iTime * uSpeed)) / mainDist, 1.0);
           
-          float dist = abs(uv.x);
+          // Add scattering lightning branches
+          float branches = 0.0;
+          
+          // Branch 1 - Upper right
+          branches += lightningBranch(uv, 0.3, 1.2, 0.4) * 0.6;
+          
+          // Branch 2 - Lower left
+          branches += lightningBranch(uv, -0.2, 1.1, -0.3) * 0.5;
+          
+          // Branch 3 - Upper left
+          branches += lightningBranch(uv, -0.4, 0.9, 0.6) * 0.4;
+          
+          // Branch 4 - Lower right
+          branches += lightningBranch(uv, 0.1, 1.0, -0.5) * 0.7;
+          
+          // Branch 5 - Center scatter
+          branches += lightningBranch(uv, 0.05, 1.3, sin(iTime * uSpeed * 3.0) * 0.2) * 0.3;
+          
+          // Additional micro-branches for more detail
+          for(int i = 0; i < 3; i++) {
+              float fi = float(i);
+              float offset = sin(iTime * uSpeed + fi * 2.1) * 0.3;
+              float scale = 0.8 + sin(iTime * uSpeed * 1.5 + fi * 1.7) * 0.2;
+              float angle = cos(iTime * uSpeed * 2.0 + fi * 3.14) * 0.4;
+              branches += lightningBranch(uv, offset, scale, angle) * (0.2 + 0.1 * sin(iTime * uSpeed + fi));
+          }
+          
+          // Combine main lightning with branches
+          float totalLightning = mainLightning + branches * 0.8;
+          
           vec3 baseColor = hsv2rgb(vec3(uHue / 360.0, 0.7, 0.8));
-          vec3 col = baseColor * pow(mix(0.0, 0.07, hash11(iTime * uSpeed)) / dist, 1.0) * uIntensity;
+          vec3 col = baseColor * totalLightning * uIntensity;
+          
+          // Add some glow effect
+          float glow = exp(-mainDist * 3.0) * 0.3;
+          col += baseColor * glow * uIntensity * 0.5;
+          
           col = pow(col, vec3(1.0));
           fragColor = vec4(col, 1.0);
       }
